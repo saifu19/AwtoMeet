@@ -178,7 +178,7 @@ Brings up web + api + worker + LiveKit + migrations in one command. MySQL is ext
 ### Bootstrap
 
 ```bash
-git clone <repo-url> awtomeet && cd awtomeet
+git clone https://github.com/saifu19/AwtoMeet && cd awtomeet
 
 ./scripts/bootstrap.sh \
   "mysql://meeting_app:<password>@<db-host>:3306/meeting_app" \
