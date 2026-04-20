@@ -11,6 +11,7 @@ No external SaaS on the AI path. Self-hostable end-to-end with one `docker compo
 ## Table of Contents
 
 - [Loom Demo](#loom-demo)
+- [What I built](#what-i-built)
 - [What makes it different](#what-makes-it-different)
 - [Architecture](#architecture)
 - [Tech Stack](#tech-stack)
@@ -29,6 +30,18 @@ No external SaaS on the AI path. Self-hostable end-to-end with one `docker compo
 ## Loom Demo
 
 [![Watch the demo](./demo.png)](https://www.loom.com/share/46761d8a2e75406aa52240db0d3f98f5)
+
+---
+
+## What I built
+
+- Designed and implemented the end-to-end real-time meeting pipeline
+- Integrated LiveKit for multi-participant audio/video with per-track speaker identity
+- Built streaming transcription pipeline using Whisper (`gpt-4o-transcribe`)
+- Implemented event-driven agent orchestration using LangGraph with isolated memory per agent
+- Developed Fastify-based backend with SSE streaming for live dashboard updates
+- Built Python worker system for agent execution and post-meeting processing
+- Designed self-hostable deployment using Docker Compose
 
 ---
 
