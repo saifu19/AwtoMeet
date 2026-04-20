@@ -75,7 +75,30 @@ export interface InviteEmailData {
   hostName: string;
   meetingTitle: string;
   inviteUrl: string;
-  scheduledAt?: string;
+  scheduledAt?: Date;
+}
+
+/**
+ * Format a Date as a human-readable UTC string for email bodies.
+ * Example: "Wed, Apr 22, 2026 · 14:30 UTC".
+ *
+ * Emails have no runtime to format times in the reader's local timezone,
+ * and we don't store per-recipient timezones. We render an unambiguous UTC
+ * label in the body and rely on the attached ICS (calendar.ts) to show the
+ * reader their local time in their mail client. The CTA link also takes
+ * them to the web app where browser-local formatting kicks in.
+ */
+function formatUtc(d: Date): string {
+  return d.toLocaleString('en-US', {
+    weekday: 'short',
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+    timeZone: 'UTC',
+  }).replace(/,/g, '') + ' UTC';
 }
 
 export interface SummaryReadyEmailData {
@@ -94,8 +117,10 @@ export interface WelcomeEmailData {
 export function inviteTemplate(data: InviteEmailData): EmailTemplate {
   const title = esc(data.meetingTitle);
   const host = esc(data.hostName);
-  const scheduleLine = data.scheduledAt
-    ? `<p style="margin:8px 0;font-size:14px;color:#52525b;">Scheduled: ${esc(data.scheduledAt)}</p>`
+  const scheduledUtc = data.scheduledAt ? formatUtc(data.scheduledAt) : null;
+  const scheduleLine = scheduledUtc
+    ? `<p style="margin:8px 0 4px;font-size:14px;color:#52525b;">Scheduled: <strong>${esc(scheduledUtc)}</strong></p>
+       <p style="margin:0 0 8px;font-size:12px;color:#a1a1aa;">An invite is attached — open it to see the time in your local timezone, or click below to view in the web app.</p>`
     : '';
 
   const html = wrapLayout(`
@@ -111,7 +136,7 @@ export function inviteTemplate(data: InviteEmailData): EmailTemplate {
     `You're invited to a meeting`,
     ``,
     `${data.hostName} has invited you to: ${data.meetingTitle}`,
-    data.scheduledAt ? `Scheduled: ${data.scheduledAt}` : '',
+    scheduledUtc ? `Scheduled: ${scheduledUtc} (see attached invite for local time)` : '',
     ``,
     `Join here: ${data.inviteUrl}`,
   ].filter(Boolean).join('\n');

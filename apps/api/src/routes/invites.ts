@@ -86,12 +86,21 @@ export async function meetingInviteRoutes(app: FastifyInstance) {
 
       const webUrl = process.env.WEB_URL ?? 'http://localhost:5173';
       const inviteUrl = `${webUrl}/invites/${inviteToken}`;
+      // scheduled_at is an ISO UTC string from the repository layer; hand
+      // the template a real Date so it can format UTC for the body AND emit
+      // a valid ICS attachment (F04). If the meeting has no scheduled time,
+      // both the schedule line and ICS are simply omitted.
       sendInviteEmail({
         inviteeEmail: body.invited_email,
         hostName: request.user!.email,
+        hostEmail: request.user!.email,
+        meetingId: meeting!.id,
         meetingTitle: meeting!.title,
+        meetingDescription: meeting!.description ?? null,
         inviteUrl,
-        scheduledAt: meeting!.scheduled_at ?? undefined,
+        scheduledAt: meeting!.scheduled_at
+          ? new Date(meeting!.scheduled_at)
+          : undefined,
       }).catch(() => {});
 
       return reply.code(201).send(invite);
