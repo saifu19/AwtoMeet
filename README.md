@@ -10,6 +10,7 @@ No external SaaS on the AI path. Self-hostable end-to-end with one `docker compo
 
 ## Table of Contents
 
+- [Loom Demo](#loom-demo)
 - [What makes it different](#what-makes-it-different)
 - [Architecture](#architecture)
 - [Tech Stack](#tech-stack)
@@ -22,6 +23,12 @@ No external SaaS on the AI path. Self-hostable end-to-end with one `docker compo
 - [Design System](#design-system)
 - [Production Deployment](#production-deployment)
 - [Documentation](#documentation)
+
+---
+
+## Loom Demo
+
+[![Watch the demo](./demo.png)](https://www.loom.com/share/46761d8a2e75406aa52240db0d3f98f5)
 
 ---
 
