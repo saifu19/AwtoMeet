@@ -42,6 +42,14 @@ async def attach_transcription(
     room: rtc.Room | None = None,
 ) -> None:
     """One STT stream per (participant, track). Emits paragraphs to sink."""
+    # Snapshot identity/name at attach time. The closure previously read
+    # participant.identity / participant.name at emission time; LiveKit's
+    # RemoteParticipant proxy is mutable, and stale emissions from a
+    # torn-down stream could pick up the wrong name if the SDK reused the
+    # object. Immutable locals make attribution deterministic (F03).
+    speaker_identity = participant.identity
+    speaker_name = participant.name or participant.identity
+
     audio = rtc.AudioStream(track)
     stream = stt.stream()
 
@@ -55,7 +63,7 @@ async def attach_transcription(
         finally:
             stream.end_input()
 
-    pump_task = asyncio.create_task(pump(), name=f"stt-pump-{participant.identity}")
+    pump_task = asyncio.create_task(pump(), name=f"stt-pump-{speaker_identity}-{track.sid}")
 
     para_start_ms: int | None = None
     para_end_ms: int | None = None
@@ -76,8 +84,8 @@ async def attach_transcription(
 
                 now_ms = int(time.time() * 1000)
                 msg = Message(
-                    speaker_identity=participant.identity,
-                    speaker_name=participant.name or participant.identity,
+                    speaker_identity=speaker_identity,
+                    speaker_name=speaker_name,
                     text=alt.text.strip(),
                     start_ts_ms=para_start_ms or now_ms,
                     end_ts_ms=para_end_ms or now_ms,
@@ -91,9 +99,9 @@ async def attach_transcription(
                 para_start_ms, para_end_ms = None, None
 
     except asyncio.CancelledError:
-        logger.debug("attach_transcription cancelled for %s", participant.identity)
+        logger.debug("attach_transcription cancelled for %s", speaker_identity)
     except Exception:
-        logger.exception("STT stream error for %s", participant.identity)
+        logger.exception("STT stream error for %s", speaker_identity)
     finally:
         pump_task.cancel()
         await asyncio.gather(pump_task, return_exceptions=True)
@@ -101,5 +109,5 @@ async def attach_transcription(
         try:
             await audio.aclose()
         except Exception:
-            logger.debug("audio stream close failed for %s", participant.identity)
-        logger.debug("attach_transcription ended for %s", participant.identity)
+            logger.debug("audio stream close failed for %s", speaker_identity)
+        logger.debug("attach_transcription ended for %s", speaker_identity)

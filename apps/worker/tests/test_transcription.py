@@ -307,6 +307,47 @@ async def test_print_sink_logs(monkeypatch, caplog):
 
 
 @pytest.mark.asyncio
+async def test_speaker_fields_snapshot_at_attach_time(monkeypatch):
+    """F03: identity/name are snapshotted at attach time, not read at emit.
+
+    Simulates the LiveKit proxy being mutated (name/identity changed) AFTER
+    the stream has started. The emitted Message must still carry the values
+    captured when attach_transcription was invoked.
+    """
+    events = [
+        _speech_event(SpeechEventType.START_OF_SPEECH),
+        _speech_event(SpeechEventType.END_OF_SPEECH),
+        _speech_event(SpeechEventType.FINAL_TRANSCRIPT, text="hello"),
+    ]
+    stt = _make_stt(events)
+    sink = FakeSink()
+    participant = _make_participant("muaz_01", "Muaz")
+
+    monkeypatch.setattr("src.transcription.rtc.AudioStream", lambda t: FakeAudioStream())
+
+    # Mutate the proxy mid-flight. Without the F03 snapshot, the emission
+    # would pick up these new values and misattribute Muaz's speech to Saif.
+    original_stream = stt.stream
+
+    def mutating_stream():
+        participant.identity = "saif_02"
+        participant.name = "Saif"
+        return original_stream.return_value
+    stt.stream = mutating_stream
+
+    await attach_transcription(
+        participant=participant,
+        track=_make_track(),
+        stt=stt,
+        sink=sink,
+    )
+
+    assert len(sink.paragraphs) == 1
+    assert sink.paragraphs[0].speaker_identity == "muaz_01"
+    assert sink.paragraphs[0].speaker_name == "Muaz"
+
+
+@pytest.mark.asyncio
 async def test_cancellation_cleans_up(monkeypatch):
     """Cancelling the task cleans up pump and stream without errors."""
 

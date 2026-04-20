@@ -65,8 +65,33 @@ async def entrypoint(ctx: JobContext):
     try:
         buffer_size = get_buffer_size(meeting_id)
         fanout = AgentFanout(meeting_id, buffer_size=buffer_size)
-        transcription_tasks: dict[str, asyncio.Task] = {}
+        # Key = (participant.identity, track.sid). A rejoining participant keeps
+        # the same identity but always gets a fresh track sid, so the composite
+        # key guarantees no collision between the stale STT task and its
+        # replacement — which is what caused cross-speaker misattribution
+        # before F03.
+        transcription_tasks: dict[tuple[str, str], asyncio.Task] = {}
+        # Cleanup tasks spawned from sync LiveKit callbacks (track_unsubscribed,
+        # participant_disconnected, on_track collision). LiveKit event handlers
+        # are sync and cannot await, so we schedule the cancel-and-await as a
+        # background task and make shutdown wait for the whole set.
+        cleanup_tasks: set[asyncio.Task] = set()
         disconnect_event = asyncio.Event()
+
+        async def _cancel_and_await(task: asyncio.Task) -> None:
+            if task.done():
+                return
+            task.cancel()
+            try:
+                await task
+            except (asyncio.CancelledError, Exception):
+                pass
+
+        def _schedule_cleanup(task: asyncio.Task) -> None:
+            """Spawn _cancel_and_await and track it so shutdown can wait on it."""
+            t = asyncio.create_task(_cancel_and_await(task), name="stt-cleanup")
+            cleanup_tasks.add(t)
+            t.add_done_callback(cleanup_tasks.discard)
 
         # participant/track handlers are REGISTERED BEFORE ctx.connect() so the
         # room-state sync that fires during connect doesn't race ahead of us.
@@ -89,6 +114,17 @@ async def entrypoint(ctx: JobContext):
         @ctx.room.on("participant_disconnected")
         def on_leave(participant):
             logger.info("participant left: %s", participant.identity)
+            # Tear down any STT tasks still bound to this identity. Without
+            # this, the `async for ev in stream:` loop in attach_transcription
+            # sits waiting on the OpenAI websocket forever and trailing
+            # FINAL_TRANSCRIPTs land in the buffer with fresh wall-clock
+            # timestamps, colliding with whoever is speaking next.
+            stale_keys = [k for k in transcription_tasks if k[0] == participant.identity]
+            for k in stale_keys:
+                t = transcription_tasks.pop(k, None)
+                if t is not None:
+                    _schedule_cleanup(t)
+
             humans = [
                 p for p in ctx.room.remote_participants.values() if _is_human(p)
             ]
@@ -108,10 +144,12 @@ async def entrypoint(ctx: JobContext):
         @ctx.room.on("track_subscribed")
         def on_track(track, pub, participant):
             if track.kind == rtc.TrackKind.KIND_AUDIO:
-                task_key = participant.identity
+                task_key = (participant.identity, track.sid)
+                # Defense-in-depth: composite key should make collisions
+                # impossible, but if one slips through, tear the old one down.
                 old_task = transcription_tasks.pop(task_key, None)
-                if old_task and not old_task.done():
-                    old_task.cancel()
+                if old_task is not None:
+                    _schedule_cleanup(old_task)
 
                 task = asyncio.create_task(
                     attach_transcription(
@@ -121,12 +159,28 @@ async def entrypoint(ctx: JobContext):
                         sink=fanout,
                         room=ctx.room,
                     ),
-                    name=f"stt-{task_key}",
+                    name=f"stt-{participant.identity}-{track.sid}",
                 )
                 transcription_tasks[task_key] = task
-                task.add_done_callback(
-                    lambda t, k=task_key: transcription_tasks.pop(k, None)
-                )
+
+                # Compare-and-delete: only evict the key if it still maps to
+                # THIS task. Prevents a late-finishing predecessor from
+                # accidentally removing its successor's entry (the "skipped
+                # audio" bug in F03).
+                def _on_done(t: asyncio.Task, k=task_key) -> None:
+                    if transcription_tasks.get(k) is t:
+                        transcription_tasks.pop(k, None)
+
+                task.add_done_callback(_on_done)
+
+        @ctx.room.on("track_unsubscribed")
+        def on_track_unsubscribed(track, pub, participant):
+            if track.kind != rtc.TrackKind.KIND_AUDIO:
+                return
+            task_key = (participant.identity, track.sid)
+            t = transcription_tasks.pop(task_key, None)
+            if t is not None:
+                _schedule_cleanup(t)
 
         await ctx.connect(auto_subscribe=AutoSubscribe.AUDIO_ONLY)
 
@@ -152,13 +206,19 @@ async def entrypoint(ctx: JobContext):
         try:
             await disconnect_event.wait()
         finally:
-            # Order: cancel STT → flush buffer + agents → close checkpointer → end meeting.
+            # Order: cancel live STT → drain pending cleanups → flush buffer +
+            # agents → close checkpointer → end meeting. Draining cleanup_tasks
+            # ensures any track_unsubscribed / participant_disconnected
+            # teardown started moments before shutdown actually completes —
+            # otherwise their tail emissions would race the fanout finalizer.
             for task in transcription_tasks.values():
                 task.cancel()
             await asyncio.gather(
                 *transcription_tasks.values(),
                 return_exceptions=True,
             )
+            if cleanup_tasks:
+                await asyncio.gather(*cleanup_tasks, return_exceptions=True)
             await fanout.flush_all_and_finalize()
 
     except Exception:
