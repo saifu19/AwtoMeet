@@ -1,0 +1,104 @@
+services:
+  livekit:
+    image: livekit/livekit-server:latest
+    container_name: mojomeet-livekit
+    restart: unless-stopped
+    command: --config /etc/livekit/livekit.yaml --bind 0.0.0.0
+    volumes:
+      - ./livekit/livekit.yaml:/etc/livekit/livekit.yaml:ro
+    ports:
+      - "7880:7880"
+      - "7881:7881"
+      - "50000-50099:50000-50099/udp"
+    networks:
+      - mojomeet
+
+  # One-shot: sync DB schema + seed global defaults. Exits 0 on success.
+  # api waits for this to complete before starting, so fresh DBs "just work".
+  migrate:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+      target: build
+    container_name: mojomeet-migrate
+    restart: "no"
+    env_file: .env
+    working_dir: /repo/apps/api
+    # Lets MYSQL_URL use "host.docker.internal" when MySQL runs on the Forge
+    # host itself. Resolves to the container's docker-bridge gateway → host.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    command: >
+      sh -c "
+        node_modules/.bin/drizzle-kit push --force &&
+        node_modules/.bin/tsx src/db/seed.ts
+      "
+    networks:
+      - mojomeet
+
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    container_name: mojomeet-api
+    restart: unless-stopped
+    depends_on:
+      livekit:
+        condition: service_started
+      migrate:
+        condition: service_completed_successfully
+    env_file: .env
+    environment:
+      PORT: 3001
+      WEB_URL: ${PUBLIC_URL}
+      # Same-origin via nginx reverse proxy — cookies are first-party, no flip needed
+      CROSS_SITE_COOKIES: "false"
+      # Internal URL for server-side dispatch + token mint fallback.
+      # LIVEKIT_URL_PUBLIC (from .env) is what the API hands back to the browser.
+      LIVEKIT_URL: ws://livekit:7880
+      LIVEKIT_URL_PUBLIC: ${LIVEKIT_URL_PUBLIC}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - mojomeet
+
+  worker:
+    build:
+      context: apps/worker
+      dockerfile: Dockerfile
+    container_name: mojomeet-worker
+    restart: unless-stopped
+    depends_on:
+      - livekit
+      - api
+    env_file: .env
+    environment:
+      API_URL: http://api:3001
+      LIVEKIT_URL: ws://livekit:7880
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - mojomeet
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+      args:
+        # Empty = relative URLs → same-origin → nginx proxies to api
+        VITE_API_URL: ""
+    container_name: mojomeet-web
+    restart: unless-stopped
+    depends_on:
+      - api
+    # WEB_PORT defaults to 80 for standalone deploys. Set WEB_PORT=8080 (or any
+    # unused high port) when running behind an upstream reverse proxy like Forge,
+    # Caddy, or Traefik — that proxy then points at 127.0.0.1:${WEB_PORT}.
+    ports:
+      - "${WEB_PORT:-80}:80"
+    networks:
+      - mojomeet
+
+networks:
+  mojomeet:
+    driver: bridge

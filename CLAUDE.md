@@ -1,0 +1,13 @@
+- ALWAYS follow plan.md
+- ALWAYS refer to ui-plan.md for UI/UX details
+- ALWAYS create reusable components and modules wherever possible
+- ALWAYS adhere to Software Engineering principles and OPTIMIZE THE CODE WHEREVER POSSIBLE
+- Every step you take will either haunt us forever or save us a lot of time and money SO THINK THINK THINK before you take any step
+- Never ever MODIFY docs/ or plan.md until and unless user specifically gives you double-confirmation and consent
+- Time is MONEY so launch multi-agents whenever feasible
+- Break down tasks to mono-tasks, ALWAYS PLAN FIRST
+- Existing code is to be taken care of ALWAYS
+- Utilize all tools at your disposal, Create tests for everything and TEST EVERYTHING before returning the response to user
+- Utilize --chrome for frontend testing
+- Never ever use dependancy versions from your knowledge, always run install commands without version and let the provider send the latest stable automatically
+- Once the response is done ALWAYS perform /validate skill before returning the response to user. Make any changes to the code based on the validation results then revalidate and keep the loop going until the latest validation results are satisfactory.

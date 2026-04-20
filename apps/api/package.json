@@ -1,0 +1,42 @@
+{
+  "name": "api",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/index.js",
+    "typecheck": "tsc --noEmit",
+    "db:push": "drizzle-kit push",
+    "db:studio": "drizzle-kit studio",
+    "db:seed": "tsx src/db/seed.ts",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@fastify/cookie": "^11.0.2",
+    "@fastify/cors": "^11.2.0",
+    "@fastify/rate-limit": "^10.3.0",
+    "@meeting-app/shared": "workspace:*",
+    "arctic": "^3.7.0",
+    "argon2": "^0.44.0",
+    "dotenv": "^17.4.1",
+    "drizzle-orm": "^0.45.2",
+    "fastify": "^5.8.4",
+    "jose": "^6.2.2",
+    "livekit-server-sdk": "^2.15.1",
+    "mysql2": "^3.21.0",
+    "nodemailer": "^8.0.5",
+    "openai": "^6.34.0",
+    "ulid": "^3.0.2",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@types/node": "^25.5.2",
+    "@types/nodemailer": "^8.0.0",
+    "drizzle-kit": "^0.31.10",
+    "tsx": "^4.21.0",
+    "typescript": "^6.0.2",
+    "vitest": "^4.1.4"
+  }
+}
